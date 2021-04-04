@@ -79,8 +79,8 @@ class ESGD:
 
     class Logger:
         
-        def __init__(self):
-            self.log_file = None
+        def __init__(self, log_file=None):
+            self.log_file = log_file
             
         def logging(self, s):
             if self.log_file is None:
