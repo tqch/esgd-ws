@@ -1,0 +1,6 @@
+__pycache__/
+.idea/
+.code/
+*/__pycache__/
+datasets/
+*.ipynb
