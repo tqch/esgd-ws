@@ -108,6 +108,7 @@ class ESGD:
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         curr_gen = [self.model_class().to(self.device) for _ in range(self.n_population)]
+        results = []
         for g in range(1, 1 + self.n_generations):
             curr_hpvals = self._sample_optimizer()
             optimizers = [self.optimizer_class(
@@ -154,12 +155,12 @@ class ESGD:
                         p_child.data = functools.reduce(lambda x, y: x + y, p_parents) / self.mixing_number
                         p_child.data.add_(1 / g * self.mutation_length * (2 * torch.rand_like(p_child) - 1))
                     offsprings.append(model)
-            running_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
-            running_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
+            train_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
+            train_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
             if test_set is not None:
-                test_running_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
-                test_running_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
-                test_running_total = 0
+                test_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
+                test_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
+                test_total = 0
             curr_gen.extend(offsprings)
             with torch.no_grad():
                 for ind in curr_gen:
@@ -169,53 +170,58 @@ class ESGD:
                     y = y.to(self.device)
                     for i, ind in enumerate(curr_gen):
                         out = ind(x)
-                        running_losses[i] += self.fitness_function(out, y).item() * x.size(0)
-                        running_corrects[i] += (out.max(dim=1)[1] == y).sum().item()
+                        train_losses[i] += self.fitness_function(out, y).item() * x.size(0)
+                        train_corrects[i] += (out.max(dim=1)[1] == y).sum().item()
                 if test_set is not None:
                     for (x, y) in test_loader:
                         x = x.to(self.device)
                         y = y.to(self.device)
-                        test_running_total += x.size(0)
+                        test_total += x.size(0)
                         for i, ind in enumerate(curr_gen):
                             out = ind(x)
-                            test_running_losses[i] += self.fitness_function(out, y).item() * x.size(0)
-                            test_running_corrects[i] += (out.max(dim=1)[1] == y).sum().item()
+                            test_losses[i] += self.fitness_function(out, y).item() * x.size(0)
+                            test_corrects[i] += (out.max(dim=1)[1] == y).sum().item()
                 for ind in curr_gen:
                     ind.train()
-            running_losses = list(map(lambda x: x / running_total, running_losses))
-            running_accs = list(map(lambda x: x / running_total, running_corrects))
+            train_losses = list(map(lambda x: x / running_total, train_losses))
+            train_accs = list(map(lambda x: x / running_total, train_corrects))
             if test_set is not None:
-                test_running_losses = list(map(lambda x: x / test_running_total, test_running_losses))
-                test_running_accs = list(map(lambda x: x / test_running_total, test_running_corrects))
-            curr_rank = np.argsort(running_losses)
+                test_losses = list(map(lambda x: x / test_total, test_losses))
+                test_accs = list(map(lambda x: x / test_total, test_corrects))
+            curr_rank = np.argsort(train_losses)
             elite = curr_rank[:self.m_elite]
             others = np.random.choice(len(curr_gen) - self.m_elite,
                                       size=self.n_population - self.m_elite) + self.m_elite
             others = curr_rank[others]
             curr_gen = [curr_gen[idx] for idx in np.concatenate([elite, others])]
-            running_losses = [running_losses[idx] for idx in np.concatenate([elite, others])]
-            running_accs = [running_accs[idx] for idx in np.concatenate([elite, others])]
+            train_losses = [train_losses[idx] for idx in np.concatenate([elite, others])]
+            train_accs = [train_accs[idx] for idx in np.concatenate([elite, others])]
             if test_set is not None:
-                test_running_losses = [test_running_losses[idx] for idx in np.concatenate([elite, others])]
-                test_running_accs = [test_running_accs[idx] for idx in np.concatenate([elite, others])]
+                test_losses = [test_losses[idx] for idx in np.concatenate([elite, others])]
+                test_accs = [test_accs[idx] for idx in np.concatenate([elite, others])]
             if self.verbose:
                 logger.logging(f"|___{get_current_time()}\tpost-EVO")
-                logger.logging(f"\t|___population best fitness: {min(running_losses)}")
-                logger.logging(f"\t|___population average fitness: {sum(running_losses) / len(running_losses)}")
-                logger.logging(f"\t|___population best accuracy: {max(running_accs)}")
-                logger.logging(f"\t|___population average accuracy: {sum(running_accs) / len(running_accs)}")
+                logger.logging(f"\t|___population best fitness: {min(train_losses)}")
+                logger.logging(f"\t|___population average fitness: {sum(train_losses) / len(train_losses)}")
+                logger.logging(f"\t|___population best accuracy: {max(train_accs)}")
+                logger.logging(f"\t|___population average accuracy: {sum(train_accs) / len(train_accs)}")
                 if test_set is not None:
-                    logger.logging(f"\t|___(test) population best test fitness: {min(test_running_losses)}")
-                    logger.logging(f"\t|___(test) population average test fitness: {sum(test_running_losses) / len(test_running_losses)}")
-                    logger.logging(f"\t|___(test) population best accuracy: {max(test_running_accs)}")
-                    logger.logging(f"\t|___(test) population average test accuracy: {sum(test_running_accs) / len(test_running_accs)}")
+                    logger.logging(f"\t|___(test) population best test fitness: {min(test_losses)}")
+                    logger.logging(f"\t|___(test) population average test fitness: {sum(test_losses) / len(test_losses)}")
+                    logger.logging(f"\t|___(test) population best accuracy: {max(test_accs)}")
+                    logger.logging(f"\t|___(test) population average test accuracy: {sum(test_accs) / len(test_accs)}")
+            results.append({
+                "train_losses": train_losses,
+                "train_accs": train_accs,
+                "test_losses": test_losses,
+                "test_accs": test_accs
+            })
+        return results
 
 
 if __name__ == "__main__":
     from models.cnn import CNN
     from torchvision import datasets, transforms
-    from torch.optim import SGD
-    from models.cnn import CNN
 
     DATA_DIR = "./datasets"
     DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR, "MNIST"))
@@ -231,9 +237,9 @@ if __name__ == "__main__":
         "momentum": (0.8, 0.9, 0.99),
         "nesterov": (False, True)
     }
-    LOG_DIR = "./log"
+    LOG_DIR = "./log/esgd"
     if not os.path.exists(LOG_DIR):
-        os.mkdir(LOG_DIR)
+        os.mkdirs(LOG_DIR)
 
     esgd = ESGD(
         hpset=HPSET,
