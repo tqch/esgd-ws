@@ -69,7 +69,7 @@ class ESGD:
             transform=None
     ):
         class Dataset:
-            def __init__(self, train_data, train_targets, transform):
+            def __init__(self, train_data, train_targets, transform=None):
                 self.train_data = train_data
                 self.train_targets = train_targets
                 self.length = len(self.train_targets)
@@ -85,10 +85,9 @@ class ESGD:
                 return self.length
 
         return DataLoader(
-            Dataset(train_data, train_targets),
+            Dataset(train_data, train_targets, transform=transform),
             shuffle=shuffle,
-            batch_size=batch_size,
-            transform=transform
+            batch_size=batch_size
         )
 
     class Logger:
@@ -126,7 +125,7 @@ class ESGD:
             transform=transform
         )
         if test_set is not None:
-            test_loader = self.get_data_loader(*test_set, shuffle=False)
+            test_loader = self.get_data_loader(*test_set, shuffle=False, batch_size=batch_size)
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         curr_gen = [self.model_class().to(self.device) for _ in range(self.n_population)]

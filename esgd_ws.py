@@ -10,9 +10,9 @@ class ESGD_WS(ESGD):
         hpval_indices = np.random.choice(len(self.hpvalues), size=self.n_population, p=weights)
         return [self.hpvalues[idx] for idx in hpval_indices], hpval_indices
 
-    def _update_weights(self, weights, rank, topn=3):
+    def _update_weights(self, g, weights, rank, topn=3):
         for idx in rank[:topn]:
-            weights[idx] += 1/np.sqrt(self.n_generations)
+            weights[idx] += 1/(len(self.hpvalues)*np.sqrt(self.n_generations)+topn*g)
         return weights/np.sum(weights)
 
     def train(
@@ -39,7 +39,7 @@ class ESGD_WS(ESGD):
             transform=transform
         )
         if test_set is not None:
-            test_loader = self.get_data_loader(*test_set, shuffle=False)
+            test_loader = self.get_data_loader(*test_set, shuffle=False, batch_size=batch_size)
         np.random.seed(self.random_state)
         torch.manual_seed(self.random_state)
         curr_gen = [self.model_class().to(self.device) for _ in range(self.n_population)]
@@ -71,7 +71,7 @@ class ESGD_WS(ESGD):
             running_losses = list(map(lambda x: x / running_total, running_losses))
             running_accs = list(map(lambda x: x / running_total, running_corrects))
             opt_rank = hpval_indices[np.argsort(running_losses)]
-            weights = self._update_weights(weights, rank=opt_rank, topn=topn)
+            weights = self._update_weights(g, weights, rank=opt_rank, topn=topn)
             if self.verbose:
                 logger.logging(f"|___{get_current_time()}\tpost-SGD")
                 logger.logging(f"\t|___population best fitness: {min(running_losses)}")
