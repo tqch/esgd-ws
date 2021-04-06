@@ -22,14 +22,22 @@ class ESGD_WS(ESGD):
             topn=3,
             init_weights=None,
             test_set=None,
-            log_file=None
+            log_file=None,
+            batch_size=1024,
+            transform=None
     ):
         logger = self.Logger(log_file)
         if init_weights is None:
             weights = np.ones(len(self.hpvalues))
+            weights /= len(self.hpvalues)
         else:
             weights = np.array(init_weights)
-        train_loader = self.get_data_loader(train_data, train_targets)
+        train_loader = self.get_data_loader(
+            train_data,
+            train_targets,
+            batch_size=batch_size,
+            transform=transform
+        )
         if test_set is not None:
             test_loader = self.get_data_loader(*test_set, shuffle=False)
         np.random.seed(self.random_state)
@@ -37,7 +45,7 @@ class ESGD_WS(ESGD):
         curr_gen = [self.model_class().to(self.device) for _ in range(self.n_population)]
         results = []
         for g in range(1, 1 + self.n_generations):
-            curr_hpvals,hpval_indices = self._sample_optimizer()
+            curr_hpvals,hpval_indices = self._sample_optimizer(weights=weights)
             optimizers = [self.optimizer_class(
                 ind.parameters(), **dict(zip(self.hpnames, hpvs))
             ) for ind, hpvs in zip(curr_gen, curr_hpvals)]
@@ -82,7 +90,8 @@ class ESGD_WS(ESGD):
                     model = self.model_class().to(self.device)
                     for p_child, *p_parents in zip(model.parameters(), *[curr_gen[idx].parameters() for idx in mix]):
                         p_child.data = functools.reduce(lambda x, y: x + y, p_parents) / self.mixing_number
-                        p_child.data.add_(1 / g * self.mutation_length * (2 * torch.rand_like(p_child) - 1))
+                        # p_child.data.add_(1 / g * self.mutation_length * (2 * torch.rand_like(p_child) - 1))
+                        p_child.data.add_(1 / g * self.mutation_length * torch.randn_like(p_child))
                     offsprings.append(model)
             train_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
             train_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
@@ -169,7 +178,7 @@ if __name__ == "__main__":
     }
     LOG_DIR = "./log/esgd_ws"
     if not os.path.exists(LOG_DIR):
-        os.mkdirs(LOG_DIR)
+        os.makedirs(LOG_DIR)
 
     esgd_ws = ESGD_WS(
         hpset=HPSET,

@@ -1,31 +1,67 @@
-import os, sys
-from tqdm import tqdm
+import os, json
 import torch
 import torch.nn as nn
-import pandas as pd
-from torchvision import datasets, transforms
+from torch.optim import SGD, lr_scheduler
 from torch.utils.data import DataLoader
-import json
+from torchvision import datasets, transforms
+import pandas as pd
+from tqdm import tqdm
+from argparse import ArgumentParser
+from models.cnn import CNN
 
+parser = ArgumentParser(description="An Evolutionary Stochastic Gradient Descent Trainer")
+parser.add_argument("scheme", choices=["baseline", "esgd", "esgd_ws"])
+parser.add_argument("--model", type=str, default="cnn")
+parser.add_argument("-a", dest="data_augmentation", action="store_true")
+parser.add_argument("--dataset", type=str, default="mnist")
+args = parser.parse_args()
 
 DATA_DIR = "./datasets"
 WEIGHTS_DIR = "./model_weights"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DATASET_DICT = {
+    "mnist": datasets.MNIST,
+    "fashion_mnist": datasets.FashionMNIST
+}
+MODEL_DICT = {"cnn": CNN}
+DATA_FOLDER = {"mnist": "MNIST", "fashion_mnist": "FashionMNIST"}
 
+results_dir = f"./results/{args.dataset}/{'DA' if args.data_augmentation else 'Non-DA'}"
+if not os.path.exists(results_dir):
+    os.makedirs(results_dir)
 
-if sys.argv[1] == "cnn_baseline":
+transform = None \
+    if not args.data_augmentation \
+    else transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.RandomResizedCrop(
+            size=(28, 28),
+            scale=(0.8, 1),
+            ratio=(3 / 4, 4 / 3)
+        ),
+        transforms.ToTensor(),
+    ])
+download = not os.path.exists(os.path.join(DATA_DIR, DATA_FOLDER[args.dataset]))
 
-    from models.cnn import CNN
-    from torch.optim import SGD, lr_scheduler
+if args.scheme == "baseline":
+    # overwrite the transformation for baseline
+    transform = transforms.ToTensor() \
+        if not args.data_augmentation \
+        else transforms.Compose([
+            transforms.RandomResizedCrop(
+                size=(28, 28),
+                scale=(0.8, 1),
+                ratio=(3 / 4, 4 / 3)
+            ),
+            transforms.ToTensor(),
+        ])
 
-    DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR,"MNIST"))
-
-    train_set = datasets.MNIST(root=DATA_DIR, train=True, transform=transforms.ToTensor(), download=DOWNLOAD)
-    test_set = datasets.MNIST(root=DATA_DIR, train=False, transform=transforms.ToTensor(), download=DOWNLOAD)
+    train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, transform=transform, download=download)
+    test_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=False, transform=transform, download=download)
     train_loader = DataLoader(train_set, batch_size=1024, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=1024, shuffle=False)
 
-    model = CNN()
+    model = MODEL_DICT[args.model]()
     model.to(DEVICE)
 
     EPOCHS = 100
@@ -76,34 +112,27 @@ if sys.argv[1] == "cnn_baseline":
                             "test_loss": test_running_loss / test_running_total,
                             "test_acc": test_running_correct / test_running_total,
                         })
-                        train_losses.append(running_loss/running_total)
+                        train_losses.append(running_loss / running_total)
                         train_accuracies.append(running_correct / running_total)
                         test_losses.append(test_running_loss / test_running_total)
                         test_accuracies.append(test_running_correct / test_running_total)
-                    # scheduler.step()
-    torch.save(model.state_dict(),os.path.join(WEIGHTS_DIR,"cnn_mnist.pt"))
+                    scheduler.step()
+    torch.save(model.state_dict(), os.path.join(WEIGHTS_DIR, f"{args.scheme}_{MODEL_DICT[args.model]}.pt"))
 
-    RESULTS_DIR = "./results"
-    if not os.path.exists(RESULTS_DIR):
-        os.mkdir(RESULTS_DIR)
     pd.DataFrame({
         "train_losses": train_losses,
         "train_accuracies": train_accuracies,
         "test_losses": test_losses,
         "test_accuracies": test_accuracies
-    }).to_csv(f"{RESULTS_DIR}/{sys.argv[1]}.csv")
+    }).to_csv(f"{results_dir}/{args.scheme}.csv")
 
-if sys.argv[1] == "cnn_esgd":
-    from models.cnn import CNN
-    from esgd import ESGD,get_current_time
+if args.scheme == "esgd":
+    from esgd import ESGD, get_current_time
 
-    DATA_DIR = "./datasets"
-    DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR, "MNIST"))
-
-    train_set = datasets.MNIST(root=DATA_DIR, train=True, transform=transforms.ToTensor(), download=DOWNLOAD)
+    train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
     train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
     train_targets = torch.LongTensor(train_set.targets)
-    test_set = datasets.MNIST(root=DATA_DIR, train=False, transform=transforms.ToTensor(), download=DOWNLOAD)
+    test_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=False, download=download)
     test_set = torch.FloatTensor(test_set.data / 255).unsqueeze(1), torch.LongTensor(test_set.targets)
 
     HPSET = {
@@ -111,53 +140,48 @@ if sys.argv[1] == "cnn_esgd":
         "momentum": (0.8, 0.9, 0.99),
         "nesterov": (False, True)
     }
-    LOG_DIR = "./log"
-    if not os.path.exists(LOG_DIR):
-        os.mkdir(LOG_DIR)
 
     esgd = ESGD(
         hpset=HPSET,
-        model_class=CNN,
-        n_generations=100
-    )
-    results = esgd.train(
-        train_data,
-        train_targets,
-        test_set=test_set
-    )
-    json.dump(results, f"{RESULTS_DIR}/{sys.argv[1]}.json")
-
-if sys.argv[1] == "cnn_esgd_ws":
-    from models.cnn import CNN
-    from esgd_ws import ESGD_WS,get_current_time
-
-    DATA_DIR = "./datasets"
-    DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR, "MNIST"))
-
-    train_set = datasets.MNIST(root=DATA_DIR, train=True, transform=transforms.ToTensor(), download=DOWNLOAD)
-    train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
-    train_targets = torch.LongTensor(train_set.targets)
-    test_set = datasets.MNIST(root=DATA_DIR, train=False, transform=transforms.ToTensor(), download=DOWNLOAD)
-    test_set = torch.FloatTensor(test_set.data / 255).unsqueeze(1), torch.LongTensor(test_set.targets)
-
-    HPSET = {
-        "lr": (0.01, 0.05, 0.1),
-        "momentum": (0.8, 0.9, 0.99),
-        "nesterov": (False, True)
-    }
-    LOG_DIR = "./log"
-    if not os.path.exists(LOG_DIR):
-        os.mkdir(LOG_DIR)
-
-    esgd = ESGD_WS(
-        hpset=HPSET,
-        model_class=CNN,
+        model_class=MODEL_DICT[args.model],
         n_generations=100
     )
     results = esgd.train(
         train_data,
         train_targets,
         test_set=test_set,
-        log_file=f"{LOG_DIR}/{get_current_time()}.log"
+        batch_size=1024,
+        transform=transform
     )
-    json.dump(results, f"{RESULTS_DIR}/{sys.argv[1]}.json")
+    with open(f"{results_dir}/{args.scheme}.json", "w") as f:
+        json.dump(results, f)
+
+if args.scheme == "esgd_ws":
+    from esgd_ws import ESGD_WS, get_current_time
+
+    train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
+    train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
+    train_targets = torch.LongTensor(train_set.targets)
+    test_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=False, download=download)
+    test_set = torch.FloatTensor(test_set.data / 255).unsqueeze(1), torch.LongTensor(test_set.targets)
+
+    HPSET = {
+        "lr": (0.01, 0.05, 0.1),
+        "momentum": (0.8, 0.9, 0.99),
+        "nesterov": (False, True)
+    }
+
+    esgd_ws = ESGD_WS(
+        hpset=HPSET,
+        model_class=MODEL_DICT[args.model],
+        n_generations=100
+    )
+    results = esgd_ws.train(
+        train_data,
+        train_targets,
+        test_set=test_set,
+        batch_size=1024,
+        transform=transform
+    )
+    with open(f"{results_dir}/{args.scheme}.json", "w") as f:
+        json.dump(results, f)

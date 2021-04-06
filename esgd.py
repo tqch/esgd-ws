@@ -61,20 +61,35 @@ class ESGD:
         return tuple(hpnames), tuple(itertools.product(*hpvalues))
 
     @staticmethod
-    def get_data_loader(train_data, train_targets, shuffle=True, batch_size=1024):
+    def get_data_loader(
+            train_data,
+            train_targets,
+            shuffle=True,
+            batch_size=1024,
+            transform=None
+    ):
         class Dataset:
-            def __init__(self, train_data, train_targets):
+            def __init__(self, train_data, train_targets, transform):
                 self.train_data = train_data
                 self.train_targets = train_targets
                 self.length = len(self.train_targets)
+                self.transform = transform
 
             def __getitem__(self, idx):
-                return self.train_data[idx], self.train_targets[idx]
+                if self.transform is None:
+                    return self.train_data[idx], self.train_targets[idx]
+                else:
+                    return self.transform(self.train_data[idx]), self.train_targets[idx]
 
             def __len__(self):
                 return self.length
 
-        return DataLoader(Dataset(train_data, train_targets), shuffle=shuffle, batch_size=batch_size)
+        return DataLoader(
+            Dataset(train_data, train_targets),
+            shuffle=shuffle,
+            batch_size=batch_size,
+            transform=transform
+        )
 
     class Logger:
 
@@ -99,10 +114,17 @@ class ESGD:
             train_data,
             train_targets,
             test_set=None,
-            log_file=None
+            log_file=None,
+            batch_size=1024,
+            transform=None
     ):
         logger = self.Logger(log_file)
-        train_loader = self.get_data_loader(train_data, train_targets)
+        train_loader = self.get_data_loader(
+            train_data,
+            train_targets,
+            batch_size=batch_size,
+            transform=transform
+        )
         if test_set is not None:
             test_loader = self.get_data_loader(*test_set, shuffle=False)
         np.random.seed(self.random_state)
@@ -153,7 +175,8 @@ class ESGD:
                     model = self.model_class().to(self.device)
                     for p_child, *p_parents in zip(model.parameters(), *[curr_gen[idx].parameters() for idx in mix]):
                         p_child.data = functools.reduce(lambda x, y: x + y, p_parents) / self.mixing_number
-                        p_child.data.add_(1 / g * self.mutation_length * (2 * torch.rand_like(p_child) - 1))
+                        # p_child.data.add_(1 / g * self.mutation_length * (2 * torch.rand_like(p_child) - 1))
+                        p_child.data.add_(1 / g * self.mutation_length * torch.randn_like(p_child))
                     offsprings.append(model)
             train_losses = [0.0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
             train_corrects = [0 for _ in range(int(self.n_population * (1 + self.reproductive_factor)))]
@@ -239,7 +262,7 @@ if __name__ == "__main__":
     }
     LOG_DIR = "./log/esgd"
     if not os.path.exists(LOG_DIR):
-        os.mkdirs(LOG_DIR)
+        os.makedirs(LOG_DIR)
 
     esgd = ESGD(
         hpset=HPSET,
