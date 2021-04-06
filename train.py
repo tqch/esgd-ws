@@ -2,13 +2,15 @@ import os, sys
 from tqdm import tqdm
 import torch
 import torch.nn as nn
+import pandas as pd
+
 
 DATA_DIR = "./datasets"
 WEIGHTS_DIR = "./model_weights"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-if sys.argv[1] == "cnn":
+if sys.argv[1] == "cnn_baseline":
 
     from models.cnn import CNN
     from torchvision import datasets, transforms
@@ -29,6 +31,11 @@ if sys.argv[1] == "cnn":
     optimizer = SGD(model.parameters(), lr=0.01, momentum=0.8, nesterov=True)
     # scheduler = lr_scheduler.StepLR(optimizer, step_size=40, gamma=0.1)
     loss_fn = nn.CrossEntropyLoss()
+
+    train_losses = []
+    train_accuracies = []
+    test_losses = []
+    test_accuracies = []
 
     for e in range(EPOCHS):
         with tqdm(train_loader, desc=f"{e + 1}/{EPOCHS} epochs") as t:
@@ -68,6 +75,20 @@ if sys.argv[1] == "cnn":
                             "test_loss": test_running_loss / test_running_total,
                             "test_acc": test_running_correct / test_running_total,
                         })
+                        train_losses.append(running_loss/running_total)
+                        train_accuracies.append(running_correct / running_total)
+                        test_losses.append(test_running_loss / test_running_total)
+                        test_accuracies.append(test_running_correct / test_running_total)
                     # scheduler.step()
 
     torch.save(model.state_dict(),os.path.join(WEIGHTS_DIR,"cnn_mnist.pt"))
+
+    RESULTS_DIR = "./results"
+    if not os.path.exists(RESULTS_DIR):
+        os.mkdir(RESULTS_DIR)
+    pd.DataFrame({
+        "train_losses": train_losses,
+        "train_accuracies": train_accuracies,
+        "test_losses": test_losses,
+        "test_accuracies": test_accuracies
+    }).to_csv(f"{RESULTS_DIR}/{sys.argv[1]}.csv")

@@ -1,107 +1,34 @@
-import os, sys, time
-from datetime import datetime
 import torch
-import torch.nn as nn
-from torch.optim import SGD
-from torch.utils.data import DataLoader
-import itertools
 import functools
 import numpy as np
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def get_current_time():
-    return datetime.fromtimestamp(time.time()).isoformat()
+from esgd import ESGD,get_current_time
 
 
-class ESGD:
+class ESGD_WS(ESGD):
 
-    def __init__(
-            self,
-            hpset,
-            model_class,
-            fitness_function=nn.CrossEntropyLoss(),
-            n_generations=10,
-            n_population=5,
-            sgds_per_gen=1,
-            evos_per_gen=1,
-            reproductive_factor=3,
-            m_elite=3,
-            mixing_number=3,
-            optimizer_class=SGD,
-            mutation_length_init=0.01,
-            random_state=71,
-            device=DEVICE,
-            verbose=True
-    ):
-        self.hpnames, self.hpvalues = self.extract_from_hpset(hpset)
-        self.model_class = model_class
-        self.fitness_function = fitness_function
-        self.n_generations = n_generations
-        self.n_population = n_population
-        self.sgds_per_gen = sgds_per_gen
-        self.evos_per_gen = evos_per_gen
-        self.reproductive_factor = reproductive_factor
-        self.m_elite = m_elite
-        self.mixing_number = mixing_number
-        self.optimizer_class = optimizer_class
-        self.mutation_length = mutation_length_init
-        self.random_state = random_state
-        self.device = device
-        self.verbose = verbose
+    def _sample_optimizer(self, weights=None):
+        hpval_indices = np.random.choice(len(self.hpvalues), size=self.n_population, p=weights)
+        return [self.hpvalues[idx] for idx in hpval_indices], hpval_indices
 
-    @staticmethod
-    def extract_from_hpset(hpset):
-        hpnames = []
-        hpvalues = []
-        for k, v in hpset.items():
-            hpnames.append(k)
-            hpvalues.append(v)
-        return tuple(hpnames), tuple(itertools.product(*hpvalues))
-
-    @staticmethod
-    def get_data_loader(train_data, train_targets, shuffle=True, batch_size=1024):
-        class Dataset:
-            def __init__(self, train_data, train_targets):
-                self.train_data = train_data
-                self.train_targets = train_targets
-                self.length = len(self.train_targets)
-
-            def __getitem__(self, idx):
-                return self.train_data[idx], self.train_targets[idx]
-
-            def __len__(self):
-                return self.length
-
-        return DataLoader(Dataset(train_data, train_targets), shuffle=shuffle, batch_size=batch_size)
-
-    class Logger:
-
-        def __init__(self, log_file=None):
-            self.log_file = log_file
-
-        def logging(self, s):
-            if self.log_file is None:
-                sys.stdout.write(s)
-                sys.stdout.write("\n")
-            else:
-                with open(self.log_file, "a+") as f:
-                    f.write(s)
-                    f.write("\n")
-
-    def _sample_optimizer(self):
-        hpval_indices = np.random.choice(len(self.hpvalues), size=self.n_population)
-        return [self.hpvalues[idx] for idx in hpval_indices]
+    def _update_weights(self, weights, rank, topn=3):
+        for idx in rank[:topn]:
+            weights[idx] += 1/np.sqrt(self.n_generations)
+        return weights/np.sum(weights)
 
     def train(
             self,
             train_data,
             train_targets,
+            topn=3,
+            init_weights=None,
             test_set=None,
             log_file=None
     ):
         logger = self.Logger(log_file)
+        if init_weights is None:
+            weights = np.ones(len(self.hpvalues))
+        else:
+            weights = np.array(init_weights)
         train_loader = self.get_data_loader(train_data, train_targets)
         if test_set is not None:
             test_loader = self.get_data_loader(*test_set, shuffle=False)
@@ -109,7 +36,7 @@ class ESGD:
         torch.manual_seed(self.random_state)
         curr_gen = [self.model_class().to(self.device) for _ in range(self.n_population)]
         for g in range(1, 1 + self.n_generations):
-            curr_hpvals = self._sample_optimizer()
+            curr_hpvals,hpval_indices = self._sample_optimizer()
             optimizers = [self.optimizer_class(
                 ind.parameters(), **dict(zip(self.hpnames, hpvs))
             ) for ind, hpvs in zip(curr_gen, curr_hpvals)]
@@ -134,6 +61,8 @@ class ESGD:
                         running_corrects[i] += (out.max(dim=1)[1] == y).sum().item()
             running_losses = list(map(lambda x: x / running_total, running_losses))
             running_accs = list(map(lambda x: x / running_total, running_corrects))
+            opt_rank = hpval_indices[np.argsort(running_losses)]
+            weights = self._update_weights(weights, rank=opt_rank, topn=topn)
             if self.verbose:
                 logger.logging(f"|___{get_current_time()}\tpost-SGD")
                 logger.logging(f"\t|___population best fitness: {min(running_losses)}")
@@ -209,39 +138,3 @@ class ESGD:
                     logger.logging(f"\t|___(test) population average test fitness: {sum(test_running_losses) / len(test_running_losses)}")
                     logger.logging(f"\t|___(test) population best accuracy: {max(test_running_accs)}")
                     logger.logging(f"\t|___(test) population average test accuracy: {sum(test_running_accs) / len(test_running_accs)}")
-
-
-if __name__ == "__main__":
-    from models.cnn import CNN
-    from torchvision import datasets, transforms
-    from torch.optim import SGD
-    from models.cnn import CNN
-
-    DATA_DIR = "./datasets"
-    DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR, "MNIST"))
-
-    train_set = datasets.MNIST(root=DATA_DIR, train=True, transform=transforms.ToTensor(), download=DOWNLOAD)
-    train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
-    train_targets = torch.LongTensor(train_set.targets)
-    test_set = datasets.MNIST(root=DATA_DIR, train=False, transform=transforms.ToTensor(), download=DOWNLOAD)
-    test_set = torch.FloatTensor(test_set.data / 255).unsqueeze(1), torch.LongTensor(test_set.targets)
-
-    HPSET = {
-        "lr": (0.01, 0.05, 0.1),
-        "momentum": (0.8, 0.9, 0.99),
-        "nesterov": (False, True)
-    }
-    LOG_DIR = "./log"
-    if not os.path.exists(LOG_DIR):
-        os.mkdir(LOG_DIR)
-
-    esgd = ESGD(
-        hpset=HPSET,
-        model_class=CNN
-    )
-    esgd.train(
-        train_data,
-        train_targets,
-        test_set=test_set,
-        log_file=f"{LOG_DIR}/{get_current_time()}.log"
-    )
