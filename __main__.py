@@ -17,7 +17,7 @@ parser.add_argument("--dataset", type=str, default="mnist")
 args = parser.parse_args()
 
 DATA_DIR = "./datasets"
-WEIGHTS_DIR = "./model_weights"
+# WEIGHTS_DIR = "./model_weights"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATASET_DICT = {
     "mnist": datasets.MNIST,
@@ -117,7 +117,7 @@ if args.scheme == "baseline":
                         test_losses.append(test_running_loss / test_running_total)
                         test_accuracies.append(test_running_correct / test_running_total)
                     scheduler.step()
-    torch.save(model.state_dict(), os.path.join(WEIGHTS_DIR, f"{args.scheme}_{MODEL_DICT[args.model]}.pt"))
+    # torch.save(model.state_dict(), os.path.join(WEIGHTS_DIR, f"{args.scheme}_{MODEL_DICT[args.model]}.pt"))
 
     pd.DataFrame({
         "train_losses": train_losses,

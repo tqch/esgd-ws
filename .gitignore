@@ -6,3 +6,4 @@ datasets/
 *.ipynb
 log/
 results/
+model_weights/
