@@ -13,6 +13,6 @@ setup(
     description="Evolutionary Stochastic Gradient Descent with Weight Sampling",
     license="MIT",
     url="https://github.com/tqch/esgd-ws",
-    package=find_packages(),
+    packages=find_packages(),
     install_requires=load_requirements()
 )

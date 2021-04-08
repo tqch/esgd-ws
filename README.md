@@ -2,8 +2,8 @@
 
 ## Table of Contents
 
-- [Installation](## Installation)
-- [Usage](## Usage)
+- [Installation](##Installation)
+- [Usage](##Usage)
 
 This repo provides a PyTorch Implementation of a modification to *Evolutionary Stochastic Gradient Descent* (**ESGD**) [[arxiv]](https://arxiv.org/abs/1810.06773), which we named **ESGD-WS**.
 
