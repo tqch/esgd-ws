@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 
-def load_requirements():
-    with open("requirements.txt", "r") as f:
-        return f.readlines()
+# def load_requirements():
+#     with open("requirements.txt", "r") as f:
+#         return f.read().split("\n")
 
 
 setup(
@@ -14,5 +14,11 @@ setup(
     license="MIT",
     url="https://github.com/tqch/esgd-ws",
     packages=find_packages(),
-    install_requires=load_requirements()
+    install_requires=[
+        "torch>=1.7.0",
+        "numpy",
+        "torchvision>=0.8.1"
+        "pandas",
+        "tqdm"
+    ]
 )
