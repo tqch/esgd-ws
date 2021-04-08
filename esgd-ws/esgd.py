@@ -242,10 +242,10 @@ class ESGD:
 
 
 if __name__ == "__main__":
-    from models.cnn import CNN
+    from .models.cnn import CNN
     from torchvision import datasets, transforms
 
-    DATA_DIR = "./datasets"
+    DATA_DIR = os.path.expanduser("~/esgd-ws/datasets")
     DOWNLOAD = not os.path.exists(os.path.join(DATA_DIR, "MNIST"))
 
     train_set = datasets.MNIST(root=DATA_DIR, train=True, transform=transforms.ToTensor(), download=DOWNLOAD)
@@ -259,7 +259,7 @@ if __name__ == "__main__":
         "momentum": (0.8, 0.9, 0.99),
         "nesterov": (False, True)
     }
-    LOG_DIR = "./log/esgd"
+    LOG_DIR = os.path.expanduser("~/esgd-ws/log/esgd")
     if not os.path.exists(LOG_DIR):
         os.makedirs(LOG_DIR)
 
