@@ -8,7 +8,7 @@ def load_requirements():
 
 setup(
     name="esgd-ws",
-    version="0.1.0",
+    version="1.0.0",
     author="Tianqi Chen",
     description="Evolutionary Stochastic Gradient Descent with Weight Sampling",
     license="MIT",
