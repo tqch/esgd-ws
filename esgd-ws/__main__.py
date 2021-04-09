@@ -127,7 +127,7 @@ if args.scheme == "baseline":
     }).to_csv(f"{results_dir}/{args.scheme}.csv")
 
 if args.scheme == "esgd":
-    from esgd import ESGD, get_current_time
+    from .esgd import ESGD, get_current_time
 
     train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
     train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
@@ -157,7 +157,7 @@ if args.scheme == "esgd":
         json.dump(results, f)
 
 if args.scheme == "esgd_ws":
-    from esgd_ws import ESGD_WS, get_current_time
+    from .esgd_ws import ESGD_WS, get_current_time
 
     train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
     train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
