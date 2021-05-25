@@ -7,7 +7,7 @@ from torchvision import datasets, transforms
 import pandas as pd
 from tqdm import tqdm
 from argparse import ArgumentParser
-from models.cnn import CNN
+from .models.cnn import CNN
 
 parser = ArgumentParser(description="An Evolutionary Stochastic Gradient Descent Trainer")
 parser.add_argument("scheme", choices=["baseline", "esgd", "esgd_ws"])
@@ -16,7 +16,7 @@ parser.add_argument("-a", dest="data_augmentation", action="store_true")
 parser.add_argument("--dataset", type=str, default="mnist")
 args = parser.parse_args()
 
-DATA_DIR = "./datasets"
+DATA_DIR = os.path.expanduser("~/esgd-ws/datasets")
 # WEIGHTS_DIR = "./model_weights"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DATASET_DICT = {
@@ -26,7 +26,7 @@ DATASET_DICT = {
 MODEL_DICT = {"cnn": CNN}
 DATA_FOLDER = {"mnist": "MNIST", "fashion_mnist": "FashionMNIST"}
 
-results_dir = f"./results/{args.dataset}/{'DA' if args.data_augmentation else 'Non-DA'}"
+results_dir = os.path.expanduser(f"~/esgd-ws/results/{args.dataset}/{'DA' if args.data_augmentation else 'Non-DA'}")
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
@@ -127,7 +127,7 @@ if args.scheme == "baseline":
     }).to_csv(f"{results_dir}/{args.scheme}.csv")
 
 if args.scheme == "esgd":
-    from esgd import ESGD, get_current_time
+    from .esgd import ESGD, get_current_time
 
     train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
     train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
@@ -157,7 +157,7 @@ if args.scheme == "esgd":
         json.dump(results, f)
 
 if args.scheme == "esgd_ws":
-    from esgd_ws import ESGD_WS, get_current_time
+    from .esgd_ws import ESGD_WS, get_current_time
 
     train_set = DATASET_DICT[args.dataset](root=DATA_DIR, train=True, download=download)
     train_data = torch.FloatTensor(train_set.data / 255).unsqueeze(1)
